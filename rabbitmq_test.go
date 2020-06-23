@@ -7,25 +7,40 @@ import (
 	"time"
 )
 
-type Message struct {
-	Content string `json:"content"`
-}
+var mq *RabbitMQ
 
-func TestDirect(t *testing.T) {
+func TestMain(m *testing.M) {
 	config := ConfigRabbitmq{
 		User:     "guoguo",
 		Password: "123456",
 		Address:  ":5672",
 	}
+	var err error
+	mq, err = NewRabbitMQConfig(config)
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
+	m.Run()
+}
+
+type Message struct {
+	Content string `json:"content"`
+}
+
+func TestDirect(t *testing.T) {
+
 	queueName := "gglmm-test-mq"
 
 	var stopChan chan<- interface{}
 
 	go func() {
-		consumer := NewConsumerConfig(config)
+		consumer, err := mq.Consumer()
+		if err != nil {
+			log.Fatal(err)
+		}
 		consumer.TypeDirect(queueName)
-		var err error
-		stopChan, err = consumer.Consume(func(exchangeName string, routingKey string, contentType string, body []byte) error {
+		stopChan, err = consumer.Subscribe(func(exchangeName string, routingKey string, contentType string, body []byte) error {
 			log.Printf("%s : %s %s %s %s\n", queueName, contentType, exchangeName, routingKey, string(body))
 			return nil
 		})
@@ -36,15 +51,18 @@ func TestDirect(t *testing.T) {
 
 	time.Sleep(1 * time.Second)
 
-	publisher := NewPublisherConfig(config)
-	publisher.TypeDirect(queueName)
+	producer, err := mq.Producer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	producer.TypeDirect(queueName)
 
 	var i = 0
 	for i = 0; i < 2; i++ {
 		timer := time.NewTimer(time.Second * 1)
 		select {
 		case <-timer.C:
-			err := publisher.Publish(queueName, Message{
+			err := producer.Publish(queueName, Message{
 				Content: fmt.Sprintf("order: %d", i),
 			})
 			if err != nil {
@@ -59,11 +77,6 @@ func TestDirect(t *testing.T) {
 }
 
 func TestFanout(t *testing.T) {
-	config := ConfigRabbitmq{
-		User:     "guoguo",
-		Password: "123456",
-		Address:  ":5672",
-	}
 	routingKeyToQueueName := map[string]string{
 		"gglmm-test-routing1": "gglmm-test-fanout-mq1",
 		"gglmm-test-routing2": "gglmm-test-fanout-mq2",
@@ -74,9 +87,12 @@ func TestFanout(t *testing.T) {
 
 	for routingKey, queueName := range routingKeyToQueueName {
 		go func(queueName string, routingKey string) {
-			consumer := NewConsumerConfig(config)
-			consumer.TypeFanout(queueName, routingKey, exchangeName)
-			stopChan, err := consumer.Consume(func(exchangeName string, routingKey string, contentType string, body []byte) error {
+			consumer, err := mq.Consumer()
+			if err != nil {
+				log.Fatal(err)
+			}
+			consumer.TypeFanout(queueName, exchangeName)
+			stopChan, err := consumer.Subscribe(func(exchangeName string, routingKey string, contentType string, body []byte) error {
 				log.Printf("%s : %s %s %s %s\n", queueName, contentType, exchangeName, routingKey, string(body))
 				return nil
 			})
@@ -89,19 +105,22 @@ func TestFanout(t *testing.T) {
 
 	time.Sleep(1 * time.Second)
 
-	publisher := NewPublisherConfig(config)
-	publisher.TypeFanout(exchangeName)
+	producer, err := mq.Producer()
+	if err != nil {
+		log.Fatal(err)
+	}
+	producer.TypeFanout(exchangeName)
 
 	var i = 0
 	for i = 0; i < 2; i++ {
 		timer := time.NewTimer(time.Second * 1)
 		select {
 		case <-timer.C:
-			err := publisher.Publish("", Message{
+			err := producer.Publish("", Message{
 				Content: fmt.Sprintf("order: %d", i),
 			})
 			if err != nil {
-				t.Fatal(err)
+				log.Fatal(err)
 			}
 		}
 	}
@@ -114,11 +133,6 @@ func TestFanout(t *testing.T) {
 }
 
 func TestTopic(t *testing.T) {
-	config := ConfigRabbitmq{
-		User:     "guoguo",
-		Password: "123456",
-		Address:  ":5672",
-	}
 	routingKeyToQueueName := map[string]string{
 		"gglmm.test.update.*": "gglmm-test-topic-update",
 		"gglmm.test.create.*": "gglmm-test-topic-create",
@@ -129,9 +143,12 @@ func TestTopic(t *testing.T) {
 
 	for routingKey, queueName := range routingKeyToQueueName {
 		go func(queueName string, routingKey string) {
-			consumer := NewConsumerConfig(config)
+			consumer, err := mq.Consumer()
+			if err != nil {
+				log.Fatal(err)
+			}
 			consumer.TypeTopic(queueName, routingKey, exchangeName)
-			stopChan, err := consumer.Consume(func(exchangeName string, routingKey string, contentType string, body []byte) error {
+			stopChan, err := consumer.Subscribe(func(exchangeName string, routingKey string, contentType string, body []byte) error {
 				log.Printf("%s : %s %s %s %s\n", queueName, contentType, exchangeName, routingKey, string(body))
 				return nil
 			})
@@ -144,19 +161,22 @@ func TestTopic(t *testing.T) {
 
 	time.Sleep(1 * time.Second)
 
-	publisher := NewPublisherConfig(config)
-	publisher.TypeTopic(exchangeName)
+	producer, err := mq.Producer()
+	if err != nil {
+		log.Fatal(err)
+	}
+	producer.TypeTopic(exchangeName)
 
 	var i = 0
 	for i = 0; i < 2; i++ {
 		timer := time.NewTimer(time.Second * 1)
 		select {
 		case <-timer.C:
-			err := publisher.Publish("gglmm.test.update.1", Message{
+			err := producer.Publish("gglmm.test.update.1", Message{
 				Content: fmt.Sprintf("order: %d", i),
 			})
 			if err != nil {
-				t.Fatal(err)
+				log.Fatal(err)
 			}
 		}
 	}
