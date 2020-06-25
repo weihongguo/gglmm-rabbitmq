@@ -21,6 +21,7 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 		return
 	}
+	defer mq.Close()
 	m.Run()
 }
 
@@ -39,6 +40,7 @@ func TestDirect(t *testing.T) {
 		if err != nil {
 			log.Fatal(err)
 		}
+		defer consumer.Close()
 		consumer.TypeDirect(queueName)
 		stopChan, err = consumer.Subscribe(func(exchangeName string, routingKey string, contentType string, body []byte) error {
 			log.Printf("%s : %s %s %s %s\n", queueName, contentType, exchangeName, routingKey, string(body))
@@ -55,6 +57,7 @@ func TestDirect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer producer.Close()
 	producer.TypeDirect(queueName)
 
 	var i = 0
@@ -91,6 +94,7 @@ func TestFanout(t *testing.T) {
 			if err != nil {
 				log.Fatal(err)
 			}
+			defer consumer.Close()
 			consumer.TypeFanout(queueName, exchangeName)
 			stopChan, err := consumer.Subscribe(func(exchangeName string, routingKey string, contentType string, body []byte) error {
 				log.Printf("%s : %s %s %s %s\n", queueName, contentType, exchangeName, routingKey, string(body))
@@ -109,6 +113,7 @@ func TestFanout(t *testing.T) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer producer.Close()
 	producer.TypeFanout(exchangeName)
 
 	var i = 0
@@ -147,6 +152,7 @@ func TestTopic(t *testing.T) {
 			if err != nil {
 				log.Fatal(err)
 			}
+			defer consumer.Close()
 			consumer.TypeTopic(queueName, routingKey, exchangeName)
 			stopChan, err := consumer.Subscribe(func(exchangeName string, routingKey string, contentType string, body []byte) error {
 				log.Printf("%s : %s %s %s %s\n", queueName, contentType, exchangeName, routingKey, string(body))
@@ -165,6 +171,7 @@ func TestTopic(t *testing.T) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer producer.Close()
 	producer.TypeTopic(exchangeName)
 
 	var i = 0
